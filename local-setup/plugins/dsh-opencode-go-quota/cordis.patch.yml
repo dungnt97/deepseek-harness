@@ -1,0 +1,12 @@
+# dsh-opencode-go-quota — profile bundle patch.
+#
+# Installing this package records the dependency; because its manifest declares
+# `dsh.bundle.patch`, the installer reconciles it into the profile's
+# `dsh.profile.bundles` layer stack, and this file supplies the plugin row.
+#
+# `config` overrides the defaults when a deployment differs (the plugin reads them in
+# `apply(ctx, config)`); with no `config`, `apiKeyEnv` is OPENCODE_API_KEY and
+# `baseUrl` is https://opencode.ai/zen/go.
+- insert:
+    - id: opencode-go-quota
+      name: dsh-opencode-go-quota

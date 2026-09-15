@@ -1,0 +1,33 @@
+{
+  "name": "dsh-opencode-go-quota",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness plugin: OpenCode Go plan quota as a /opencode-go command, for profiles without a Web server (the Desktop application)",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "opencode",
+    "opencode-go",
+    "quota",
+    "cordis"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

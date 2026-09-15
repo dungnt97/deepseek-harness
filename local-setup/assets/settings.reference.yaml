@@ -1,0 +1,61 @@
+ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+agent-default-model:
+  provider: opencode-go-deepseek
+  model: deepseek-v4.1-flash
+  reasoningEffort: high
+ui-theme:
+  preference: system
+llm-pi-ai:
+  providers:
+    opencode-go-deepseek:
+      displayName: OpenCode Go · DeepSeek 4.1
+      apiKeyEnv: OPENCODE_API_KEY
+      api: openai-completions
+      baseURL: https://opencode.ai/zen/go/v1
+      reasoning: high
+      headers:
+        x-opencode-session: <your-opencode-session-uuid>
+      models:
+        - id: deepseek-v4.1-flash
+          name: DeepSeek 4.1 Flash
+          contextWindow: 1000000
+          maxTokens: 384000
+          # MEASURED 2026-09-15: this model SEES images. Three solid 8x8 PNGs
+          # (red/blue/green) posted to /zen/go/v1/chat/completions with this entry's own
+          # x-opencode-session answered 'Red'/'Blue'/'Green' correctly -- and a text-only
+          # control on the same route returned 200, so the endpoint and key are sound.
+          # Without this line the harness falls back to DEFAULT_INPUT=["text"] (the model is
+          # in no bundled catalogue) and `read_image` refuses it by declaration alone.
+          input: [text, image]
+          compat:
+            supportsStore: false
+            supportsDeveloperRole: false
+            maxTokensField: max_tokens
+            requiresReasoningContentOnAssistantMessages: true
+            thinkingFormat: deepseek
+          reasoningEfforts:
+            off:
+            low: low
+            high: high
+            max: max
+        - id: deepseek-v4-flash-vision-exp
+          name: DeepSeek V4 Flash Vision Exp
+          contextWindow: 1000000
+          maxTokens: 384000
+          # Declared explicitly. The harness reads `input` from this entry first, then from its
+          # built-in catalogue, and otherwise falls back to DEFAULT_INPUT = ["text"] -- and
+          # `deepseek-v4.1-flash` is in no catalogue at all. This entry is the sibling Zen ships for
+          # images (same baseURL, same price); without the line the harness would still refuse.
+          input: [text, image]
+
+# Web search via OpenCode Go (the plan this machine pays for) instead of a
+# DeepSeek platform key that is no longer valid. The Go Messages endpoint
+# requires `x-opencode-session`, which the search plugin cannot send (its config
+# schema has no `headers` field), so `baseURL` points at a loopback relay that
+# adds exactly that one header: ~/.dsh/bin/go-search-proxy.py
+# Start it with:  python3 ~/.dsh/bin/go-search-proxy.py &
+web-search-deepseek:
+  baseURL: http://127.0.0.1:8787
+  model: deepseek-v4-flash
+  apiKeyEnv: OPENCODE_API_KEY

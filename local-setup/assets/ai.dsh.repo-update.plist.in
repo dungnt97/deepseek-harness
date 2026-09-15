@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.dsh.repo-update</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__REPO__/local-setup/check-update.sh</string>
+	</array>
+	<!-- Every six hours: often enough to notice a new upstream release the same day,
+	     rare enough that the fetch never becomes background noise. -->
+	<key>StartInterval</key>
+	<integer>21600</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

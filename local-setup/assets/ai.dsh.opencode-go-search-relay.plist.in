@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE. `install.sh` substitutes __HOME__ and writes the result to
+  ~/Library/LaunchAgents/ai.dsh.opencode-go-search-relay.plist
+
+  Keeps the OpenCode Go search relay up, because the Harness's web-search plugin
+  cannot send the `x-opencode-session` header that /zen/go/v1/messages requires.
+  See ~/.dsh/bin/go-search-proxy.py for the full explanation and the upstream
+  reference (OpenCode's Go docs list DeepSeek Harness under "Known Problematic
+  Clients"; discussion #5495).
+
+  Manage:  launchctl kickstart -k gui/$(id -u)/ai.dsh.opencode-go-search-relay
+           launchctl bootout   gui/$(id -u)/ai.dsh.opencode-go-search-relay
+  Log:     ~/.dsh/go-search-proxy.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.dsh.opencode-go-search-relay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__HOME__/.dsh/bin/go-search-proxy.py</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.dsh/go-search-proxy.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.dsh/go-search-proxy.log</string>
+</dict>
+</plist>
