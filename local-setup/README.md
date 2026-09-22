@@ -11,8 +11,8 @@ bash ~/deepseek-harness/local-setup/install.sh
 ```
 
 Run it after a Harness update, after a fresh clone, or whenever `read_image`,
-`web_search`, or `ak` starts refusing. It is idempotent and backs up `settings.yaml`
-first.
+`web_search`, or `ak` starts refusing. It is idempotent and backs up the settings
+document it edits first.
 
 ## Setting up another Mac
 
@@ -293,7 +293,7 @@ exits `0` from its own guards, and only the exit code and a missing fetch tell y
 | `~/Library/LaunchAgents/ai.dsh.repo-update.plist` | Checks upstream every six hours and offers a rebuild. |
 | `~/deepseek-harness/local-setup/update.sh` | Rebase → rebuild → sign → reinstall → relaunch. |
 | `~/.dsh/update.log`, `~/.dsh/update-notified`, `~/.dsh/update.lock` | Update log, last offered upstream SHA, single-run lock. |
-| `~/.dsh/settings.yaml` | `input: [text, image]` on the 4.1 entry, plus the `web-search-deepseek` block. |
+| `~/.dsh/profiles/desktop/cordis.patch.yml` | `input: [text, image]` on the 4.1 entry, plus the `web-search-deepseek` entry. Newer Harness releases import the old `~/.dsh/settings.yaml` here once and rename it to `settings.yaml.imported`; `ensure_settings.py` edits the legacy file while it exists and verifies the profile patch afterwards. |
 | `~/.dsh/skills/` | Generated mirror of AgentKit's skills with Harness-valid names, plus the hand-authored `usage` bundle. |
 | `/opt/homebrew/bin/pnpm` | The repo's pinned package manager, installed only when the machine had none. |
 | `~/.dsh/go-search-proxy.log` | Relay log. |
@@ -315,7 +315,7 @@ tail -f ~/.dsh/go-search-proxy.log                                    # log
 
 | Symptom | Cause / fix |
 |---|---|
-| `read_image`: *does not declare image input* | `settings.yaml` lost the `input:` line (an update rewrote it). Re-run `install.sh`. |
+| `read_image`: *does not declare image input* | The 4.1 entry lost the `input:` line (an update rewrote the settings document, or the profile patch was reset). Re-run `install.sh`. |
 | `web_search`: *not valid JSON* | The relay forwarded compressed bytes without the encoding header. Current relay asks for identity; if you edited it, re-run `install.sh`. |
 | `web_search`: Cloudflare `error 1010` | A generic HTTP-library signature. The relay always sends `User-Agent: deepseek-harness/1.0`; if you replaced it, restore. |
 | `web_search`: connection refused | The relay is down. `launchctl kickstart -k …` or re-run `install.sh`. |
@@ -345,13 +345,14 @@ rm ~/Library/LaunchAgents/ai.dsh.opencode-go-search-relay.plist
 rm ~/Library/LaunchAgents/ai.dsh.gui-path.plist
 rm ~/Library/LaunchAgents/ai.dsh.repo-update.plist
 rm -rf ~/.dsh/bin ~/.dsh/skills ~/.dsh/update.log ~/.dsh/update-notified ~/deepseek-harness/local-setup
-# then in ~/.dsh/settings.yaml: delete the `web-search-deepseek:` block,
-# and (optionally) keep `input: [text, image]` — that one is still needed.
+# then in ~/.dsh/profiles/desktop/cordis.patch.yml: delete the `web-search-deepseek`
+# entry, and (optionally) keep the 4.1 entry's `input: [text, image]` — that one is still needed.
 ```
 
 `~/.dsh/skills` holds a mirror of `~/.claude/skills` plus the hand-authored
 `usage` bundle; deleting it removes all of them from Harness sessions and
 changes nothing for Claude Code.
 
-Backups of every `settings.yaml` edit sit beside it as
-`settings.yaml.pre-install-*`, `…pre-4.1vision-*`, `…pre-websearch-*`.
+Backups of every settings edit sit beside the file it edited as
+`settings.yaml.pre-install-*` (legacy document) or `cordis.patch.yml.pre-install-*`
+(desktop profile patch), plus the older `…pre-4.1vision-*`, `…pre-websearch-*`.

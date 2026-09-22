@@ -24,17 +24,20 @@ relay adds the one missing header. It passes the caller's own `x-api-key` /
 the API key itself. Bind is loopback-only, and the Harness's own proxy policy
 always bypasses loopback, so there is no routing loop.
 
-CONFIGURE (settings.yaml)
--------------------------
-    web-search-deepseek:
-      baseURL: http://127.0.0.1:8787
-      model: deepseek-v4-flash
-      apiKeyEnv: OPENCODE_API_KEY
+CONFIGURE
+---------
+The `web-search-deepseek` entry points at this relay:
+    baseURL: http://127.0.0.1:8787
+    model: deepseek-v4-flash
+    apiKeyEnv: OPENCODE_API_KEY
+Older Harness releases read it from `~/.dsh/settings.yaml`; newer ones import that
+document once into the active profile's Cordis patch
+(`~/.dsh/profiles/desktop/cordis.patch.yml`) and rename it to `settings.yaml.imported`.
 
 RUN
 ---
     python3 ~/.dsh/bin/go-search-proxy.py &        # or: --port N, --session ID
-Reads the session id from settings.yaml at startup.
+Reads the session id from the settings document at startup.
 """
 import argparse
 import http.server
@@ -46,22 +49,45 @@ import urllib.request
 
 UPSTREAM = "https://opencode.ai/zen/go/v1"
 SETTINGS = pathlib.Path.home() / ".dsh" / "settings.yaml"
+PROFILE_PATCH = pathlib.Path.home() / ".dsh" / "profiles" / "desktop" / "cordis.patch.yml"
 HOP_BY_HOP = {"host", "content-length", "connection", "transfer-encoding",
               "keep-alive", "proxy-authenticate", "proxy-authorization",
               "te", "trailer", "upgrade"}
 
 
+def _session_from_llm_entry(providers):
+    for prof in (providers or {}).values():
+        sid = (prof.get("headers") or {}).get("x-opencode-session")
+        if sid:
+            return sid
+    return None
+
+
 def default_session():
-    """The session id the LLM provider already sends; read, never invented."""
+    """The session id the LLM provider already sends; read, never invented.
+
+    Reads the legacy `settings.yaml` while it exists, then the profile patch newer
+    Harness releases import it into.
+    """
+    import yaml
     try:
-        import yaml
-        cfg = yaml.safe_load(SETTINGS.read_text(encoding="utf-8"))
-        for prof in (cfg.get("llm-pi-ai", {}).get("providers", {}) or {}).values():
-            sid = (prof.get("headers") or {}).get("x-opencode-session")
+        if SETTINGS.exists():
+            cfg = yaml.safe_load(SETTINGS.read_text(encoding="utf-8")) or {}
+            sid = _session_from_llm_entry(cfg.get("llm-pi-ai", {}).get("providers"))
             if sid:
                 return sid
     except Exception as exc:                                    # noqa: BLE001
         print(f"warning: could not read a session id from {SETTINGS}: {exc}",
+              file=sys.stderr)
+    try:
+        entries = yaml.safe_load(PROFILE_PATCH.read_text(encoding="utf-8")) or []
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("id") == "llm-pi-ai":
+                sid = _session_from_llm_entry((entry.get("config") or {}).get("providers"))
+                if sid:
+                    return sid
+    except Exception as exc:                                    # noqa: BLE001
+        print(f"warning: could not read a session id from {PROFILE_PATCH}: {exc}",
               file=sys.stderr)
     return None
 
@@ -135,11 +161,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--session", default=None,
-                    help="x-opencode-session value (default: read from settings.yaml)")
+                    help="x-opencode-session value (default: read from the settings document)")
     a = ap.parse_args()
     Relay.session = a.session or default_session()
     if not Relay.session:
-        print("ERROR: no session id. Pass --session or set it in settings.yaml.",
+        print("ERROR: no session id. Pass --session or set it in the settings document.",
               file=sys.stderr)
         return 2
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), Relay)

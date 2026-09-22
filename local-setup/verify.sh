@@ -83,26 +83,33 @@ sys.exit(bad)
 PY
 [ $? -ne 0 ] && fail=1
 
-echo "== settings.yaml =="
+echo "== settings (desktop profile patch) =="
+# Newer Harness releases removed the harness-home settings.yaml: it is imported once into
+# the active profile's Cordis patch, so the settings live there now.
 python3 - <<'PY'
 import pathlib, sys, yaml
-cfg = yaml.safe_load((pathlib.Path.home()/".dsh/settings.yaml").read_text(encoding="utf-8"))
+patch = pathlib.Path.home()/".dsh/profiles/desktop/cordis.patch.yml"
+if not patch.exists():
+    print(f"  \033[31mFAIL\033[0m {patch} does not exist — launch DeepSeek Harness once"); sys.exit(1)
+entries = yaml.safe_load(patch.read_text(encoding="utf-8")) or []
+def entry(i): return next((e for e in entries if isinstance(e, dict) and e.get("id") == i), None)
 bad = 0
+llm = entry("llm-pi-ai") or {}
 models = {m.get("id"): m.get("input")
-          for p in (cfg.get("llm-pi-ai", {}).get("providers", {}) or {}).values()
-          for m in (p.get("models") or [])}
+          for p in ((llm.get("config") or {}).get("providers") or {}).values()
+          for m in (p or {}).get("models") or []}
 img = models.get("deepseek-v4.1-flash") or []
 if "image" in img:
     print(f"  \033[32mok\033[0m   deepseek-v4.1-flash declares {img}")
 else:
     print(f"  \033[31mFAIL\033[0m deepseek-v4.1-flash input={img!r} — read_image will refuse"); bad = 1
-ws = cfg.get("web-search-deepseek") or {}
-if ws.get("baseURL", "").startswith("http://127.0.0.1:"):
+ws = (entry("web-search-deepseek") or {}).get("config") or {}
+if str(ws.get("baseURL", "")).startswith("http://127.0.0.1:"):
     print(f"  \033[32mok\033[0m   web-search-deepseek -> {ws['baseURL']} (model={ws.get('model')})")
 elif ws:
     print(f"  \033[31mFAIL\033[0m web-search-deepseek -> {ws.get('baseURL')} is not the relay"); bad = 1
 else:
-    print("  \033[31mFAIL\033[0m no web-search-deepseek block — search will use the dead DeepSeek key"); bad = 1
+    print("  \033[31mFAIL\033[0m no web-search-deepseek entry — search will use the dead DeepSeek key"); bad = 1
 sys.exit(bad)
 PY
 [ $? -ne 0 ] && fail=1

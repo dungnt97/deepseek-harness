@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-Idempotently bring ~/.dsh/settings.yaml up to the two settings this machine needs.
+Idempotently ensure the two machine-local settings this setup needs, under whichever
+settings model the installed Harness uses.
 
-It edits TEXT, not a parsed document, because PyYAML cannot round-trip the comments
-that explain why each block is there -- and those comments are the whole reason a
-later reader does not delete the block. Both edits are presence-checked first, so
-running this twice is a no-op and running it after a Harness update that rewrote
-settings.yaml restores them.
+Older Harness releases read `~/.dsh/settings.yaml` directly; this script edits that file
+as TEXT (not as a parsed document, because PyYAML cannot round-trip the comments that
+explain why each block is there -- and those comments are the whole reason a later reader
+does not delete the block).
+
+Newer releases removed that file: on the next start a legacy `settings.yaml` is imported
+once into the active profile's Cordis patch and renamed to `settings.yaml.imported`. The
+same two settings then live in `~/.dsh/profiles/<profile>/cordis.patch.yml`, so this
+script verifies them there instead (and appends the web-search entry when it is missing).
 
   1. `input: [text, image]` on the `deepseek-v4.1-flash` entry.
      Without it the model falls back to DEFAULT_INPUT=["text"] (it is in no bundled
      catalogue) and `read_image` refuses it by declaration alone -- even though the
      model demonstrably sees images (three solid PNGs answered Red/Blue/Green).
 
-  2. The top-level `web-search-deepseek:` block.
+  2. The `web-search-deepseek` entry.
      Points search at the loopback relay, because Go's Messages endpoint requires
      `x-opencode-session` and the search plugin cannot send it.
 
@@ -24,7 +29,9 @@ import pathlib
 import shutil
 import sys
 
-SETTINGS = pathlib.Path.home() / ".dsh" / "settings.yaml"
+HOME = pathlib.Path.home()
+SETTINGS = HOME / ".dsh" / "settings.yaml"
+DESKTOP_PATCH = HOME / ".dsh" / "profiles" / "desktop" / "cordis.patch.yml"
 
 MODEL_ID = "deepseek-v4.1-flash"
 INPUT_LINE = "          input: [text, image]\n"
@@ -50,11 +57,24 @@ web-search-deepseek:
   apiKeyEnv: OPENCODE_API_KEY
 """
 
+WEB_SEARCH_PATCH_ENTRY = """
+# Web search via OpenCode Go (the plan this machine pays for) instead of a
+# DeepSeek platform key that is no longer valid. The Go Messages endpoint
+# requires `x-opencode-session`, which the search plugin cannot send (its config
+# schema has no `headers` field), so `baseURL` points at a loopback relay that
+# adds exactly that one header: ~/.dsh/bin/go-search-proxy.py
+# Reinstall / re-check everything with: bash ~/deepseek-harness/local-setup/install.sh
+- id: web-search-deepseek
+  name: "@deepseek-ai/dsh-web-search-deepseek"
+  config:
+    apiKeyEnv: OPENCODE_API_KEY
+    baseURL: http://127.0.0.1:8787
+    model: deepseek-v4-flash
+"""
 
-def main() -> int:
-    if not SETTINGS.exists():
-        print(f"REFUSING: {SETTINGS} does not exist", file=sys.stderr)
-        return 2
+
+def edit_legacy_document() -> int:
+    """Edit the removed `~/.dsh/settings.yaml` while it still exists (pre-import Harness)."""
     original = SETTINGS.read_text(encoding="utf-8")
     text = original
     changed = []
@@ -108,6 +128,94 @@ def main() -> int:
     print(f"  {MODEL_ID} input   = {models.get(MODEL_ID)}")
     print(f"  web-search-deepseek = {ws.get('baseURL')} · model={ws.get('model')} · key={ws.get('apiKeyEnv')}")
     return 0
+
+
+def find_entry(entries, entry_id):
+    for entry in entries or []:
+        if isinstance(entry, dict) and entry.get("id") == entry_id:
+            return entry
+    return None
+
+
+def model_input(entries, model_id):
+    entry = find_entry(entries, "llm-pi-ai")
+    if entry is None:
+        return None
+    providers = (entry.get("config") or {}).get("providers") or {}
+    for provider in providers.values():
+        for model in (provider or {}).get("models") or []:
+            if model.get("id") == model_id:
+                return model.get("input")
+    return None
+
+
+def web_search_base(entries):
+    entry = find_entry(entries, "web-search-deepseek")
+    if entry is None:
+        return None
+    return (entry.get("config") or {}).get("baseURL")
+
+
+def verify_profile_patch() -> int:
+    """Verify (and repair) the settings the new Harness imported into the desktop patch."""
+    if not DESKTOP_PATCH.exists():
+        print(f"REFUSING: {DESKTOP_PATCH} does not exist — launch DeepSeek Harness once, "
+              "or run this before the settings model changed", file=sys.stderr)
+        return 2
+    import yaml
+    text = DESKTOP_PATCH.read_text(encoding="utf-8")
+    entries = yaml.safe_load(text) or []
+    if not isinstance(entries, list):
+        print(f"REFUSING: {DESKTOP_PATCH} is not a patch entry list", file=sys.stderr)
+        return 2
+
+    changed = []
+    if web_search_base(entries) is None:
+        # Appending one entry is additive and cannot disturb the others; the `[]` root of a
+        # profile that has never been edited needs to become a list first.
+        if text.strip() == "[]":
+            text = WEB_SEARCH_PATCH_ENTRY.lstrip("\n")
+        else:
+            if not text.endswith("\n"):
+                text += "\n"
+            text += WEB_SEARCH_PATCH_ENTRY
+        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = DESKTOP_PATCH.with_name(f"cordis.patch.yml.pre-install-{ts}")
+        shutil.copy2(DESKTOP_PATCH, backup)
+        DESKTOP_PATCH.write_text(text, encoding="utf-8")
+        entries = yaml.safe_load(text) or []
+        changed.append("added web-search-deepseek -> loopback relay")
+
+    image_input = model_input(entries, MODEL_ID)
+    base = web_search_base(entries)
+
+    if image_input is not None and "image" in image_input:
+        print(f"  {MODEL_ID} input   = {image_input}")
+    else:
+        print(f"REFUSING: {MODEL_ID} input={image_input!r} in {DESKTOP_PATCH} — `read_image` "
+              "will refuse it. The legacy import writes it from ~/.dsh/settings.yaml; restore "
+              "that file from local-setup/assets/settings.reference.yaml and relaunch the app.",
+              file=sys.stderr)
+        return 2
+
+    if base and str(base).startswith("http://127.0.0.1:"):
+        print(f"  web-search-deepseek = {base} (profile patch)")
+    else:
+        print(f"REFUSING: web-search-deepseek -> {base!r} in {DESKTOP_PATCH} is not the relay",
+              file=sys.stderr)
+        return 2
+
+    if changed:
+        print("desktop profile patch updated: " + "; ".join(changed))
+    else:
+        print("desktop profile patch already correct — nothing written")
+    return 0
+
+
+def main() -> int:
+    if SETTINGS.exists():
+        return edit_legacy_document()
+    return verify_profile_patch()
 
 
 if __name__ == "__main__":
