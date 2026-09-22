@@ -157,7 +157,7 @@ Version derivation does not change the fixed update channel or `nightly.yml` / `
 
 Packaging, upload, and manual macOS signature verification read `apps/desktop/.env.windows` or `.env.macos`, selected by target platform. Copy the [Windows template](.env.windows.example) or [macOS template](.env.macos.example) and fill in the local settings; Git ignores both local files, and packaged artifacts exclude them. Release fields come only from the target file, without fallback to system or shell variables; `PATH`, proxies, and build-tool settings remain inherited. The published version is an argument rather than a release field, and upload reads it from the completion record the packaging run wrote. Files use UTF-8 with optional BOM; relative certificate, SignTool, Apple API key, and keychain paths resolve from `apps/desktop`, values are not shell-expanded, and passwords containing `#` or spaces need quotes. CI also creates the target file before invoking packaging.
 
-Every package command checks the application ID, update origin, and mode-specific signing configuration before building or downloading, then probes the external tools the run will use: the archive reader, and on a Windows target the installer compiler. macOS checks the identity, Team ID, one complete notarization strategy, readable local `CSC_LINK` p12 file, explicit `CSC_KEY_PASSWORD`, and referenced API key and keychain files; Windows checks the public code-signing certificate, SignTool file, container name, and PIN format. Windows preparation-only and explicit unsigned builds do not require signing credentials. Configuration checks do not authenticate the PIN, log in to the token, unlock a keychain, or contact Apple; actual signing and notarization perform those checks. `--build-version auto` does contact the destination bucket, including under `--check`. Run the same checks separately:
+Every package command checks the application ID, update origin, and mode-specific signing configuration before building or downloading, then probes the external tools the run will use: the archive reader, and on a Windows target the installer compiler. macOS checks the identity, Team ID, one complete notarization strategy, readable local `CSC_LINK` p12 file, explicit `CSC_KEY_PASSWORD`, and referenced API key and keychain files; Windows checks the public code-signing certificate, SignTool file, container name, and PIN format. Windows preparation-only and explicit unsigned builds, and the local unsigned macOS build, do not require signing credentials. Configuration checks do not authenticate the PIN, log in to the token, unlock a keychain, or contact Apple; actual signing and notarization perform those checks. `--build-version auto` does contact the destination bucket, including under `--check`. Run the same checks separately:
 
 ```sh
 pnpm --dir apps/desktop run check:package
@@ -266,6 +266,17 @@ pnpm run package:desktop:win:x64:unsigned
 ```
 
 The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
+
+### Local unsigned macOS build
+
+On Apple Silicon, add `DSH_DESKTOP_LOCAL_UNSIGNED=1` to the directory package command to produce a runnable application without Apple Developer credentials:
+
+```sh
+DSH_DESKTOP_APP_ID=com.example.desktop DSH_DESKTOP_LOCAL_UNSIGNED=1 \
+  pnpm --dir apps/desktop run package:mac:arm64:dir
+```
+
+The mode requires `--dir`, because a disk image and a notarization ticket are release artifacts. It writes `.desktop-build/targets/mac-arm64/local-artifacts/`, ad-hoc signs every materialized Mach-O file instead of asserting a release identity, and omits the signing keychain, notarization, mandatory-update policy, and update channel. The application runs on the build host only and never satisfies release qualification. The target dotenv file is optional in this mode, where the application identifier and the flag come from the caller. Every other command keeps its release requirements.
 
 ### Windows installer interface
 
