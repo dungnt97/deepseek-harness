@@ -14,6 +14,7 @@ describe('desktop build paths', () => {
       'root',
       'artifacts',
       'unsignedArtifacts',
+      'localArtifacts',
       'runtime',
       'packageSet',
       'dsh',
@@ -28,6 +29,7 @@ describe('desktop build paths', () => {
       expect(new Set([arm64[key], x64[key], windows[key]]).size).toBe(3)
     }
     expect(arm64.artifacts).toContain(join('targets', 'mac-arm64', 'artifacts'))
+    expect(arm64.localArtifacts).toContain(join('targets', 'mac-arm64', 'local-artifacts'))
     expect(x64.dsh).toContain(join('targets', 'mac-x64', 'dsh'))
     expect(windows.runtime).toContain(join('targets', 'win-x64', 'runtime'))
   })
