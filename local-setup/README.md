@@ -231,7 +231,7 @@ What keeps it safe:
 
 | Property | How |
 |---|---|
-| One prompt per upstream state | The asked-about SHA is recorded in `~/.dsh/update-notified`; "Later" is not re-asked until upstream moves. |
+| One prompt per upstream state | The asked-about SHA is recorded in `~/.dsh/update-notified`; "Later" is not re-asked until upstream moves, and an update that fails clears the record so the same state is offered again. |
 | Never a half-installed app | The new bundle is built **and signature-verified before** the installed one is touched. |
 | A conflict cannot break anything | A failed merge is aborted; the installed application is left alone and a notification says it needs attention. |
 | Preview without side effects | `bash update.sh --dry-run` reports what it would do and stops. |
@@ -328,7 +328,7 @@ tail -f ~/.dsh/go-search-proxy.log                                    # log
 | `/usage` shows nothing or an HTTP error | Run `~/.dsh/bin/opencode-usage.py` and read the message: `HTTP 401` means the key is not the Go one, `HTTP 404` means the endpoint moved. The plugin/allowance check needs no restart. |
 | A quota plugin installed but no sidebar widget | The published plugins need `webServer`, which Desktop disables. They only render under `dsh --profile web`. |
 | The update alert never appears | Check the agent is loaded (`launchctl print gui/$(id -u)/ai.dsh.repo-update`) and that upstream actually moved (`git -C ~/deepseek-harness rev-list --count HEAD..upstream/master`). A state already offered is not offered again; delete `~/.dsh/update-notified` to be asked again. |
-| The update stopped with "needs attention" | The merge conflicted and was aborted; the installed app is untouched. Resolve in a terminal: `git merge upstream/master`, fix the listed files, commit, then `bash local-setup/update.sh`. |
+| The update stopped with "needs attention" | The merge conflicted and was aborted; the installed app is untouched, and the next check offers that same update again. Resolve in a terminal: `git merge upstream/master`, fix the listed files, commit, then `bash local-setup/update.sh`. |
 | The update stopped with "Uncommitted changes" | Tracked files are modified. Commit them to `desktop-local` or discard them; untracked paths such as `local-setup/` never block it. |
 | An update seems stuck | `tail -f ~/.dsh/update.log`. A killed run leaves `~/.dsh/update.lock`; remove it only when no update is running. |
 

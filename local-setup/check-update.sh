@@ -44,7 +44,12 @@ case "$ANSWER" in
     # job's main process exits, which killed a detached `nohup` child at its first
     # `git fetch` (SIGTERM, exit before any build). Staying alive keeps the update in
     # this job's group; the job's exit code then reports the update's outcome.
-    /bin/bash "$SETUP/update.sh"
+    if ! /bin/bash "$SETUP/update.sh"; then
+      # An update that did not finish must be offered again; keeping the state recorded
+      # above would silence this upstream state until upstream moved on its own.
+      rm -f "$STATE"
+      /usr/bin/osascript -e "display notification \"The update did not finish — see ~/.dsh/update.log\" with title \"$SUBJECT update failed\"" >/dev/null 2>&1 || true
+    fi
     ;;
   *)
     printf '%s\n' "$UPSTREAM_SHA" > "$STATE"
