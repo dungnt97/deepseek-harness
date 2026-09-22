@@ -130,6 +130,25 @@ export async function signMacOSRuntimeCode(path, identifier, expected, entitleme
 }
 
 /**
+ * Apply an ad-hoc signature to one Mach-O file for a local, non-distributed build.
+ * macOS refuses to execute arm64 code that carries no signature; an ad-hoc
+ * signature satisfies that requirement without claiming a release identity.
+ * @param {string} path - Writable standalone Mach-O file.
+ * @param {string} identifier - Stable code-signing identifier.
+ * @param {string | undefined} entitlements - Optional entitlement plist for this executable.
+ * @returns {Promise<void>} Resolves after codesign exits successfully.
+ */
+export async function signMacOSRuntimeCodeAdHoc(path, identifier, entitlements) {
+  await runAppleCommandAsync('/usr/bin/codesign', [
+    '--force',
+    '--sign', '-',
+    '--identifier', identifier,
+    ...(entitlements === undefined ? [] : ['--entitlements', entitlements]),
+    path,
+  ], 'codesign')
+}
+
+/**
  * Verify one Mach-O file embedded in the runtime tree.
  * @param {string} path - Mach-O file to inspect.
  * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.

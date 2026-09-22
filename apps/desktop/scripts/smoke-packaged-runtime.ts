@@ -2,6 +2,7 @@
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { isLocalUnsignedBuild } from './desktop-release-environment.mjs'
 import { readDesktopRuntime, verifyDesktopRuntime } from '../src/runtime-tree.ts'
 import { verifyWindowsCode } from './windows-runtime-signature.mjs'
 import { smokePreparedRuntime } from './smoke-prepared-runtime.ts'
@@ -12,7 +13,8 @@ const { values } = parseArgs({ options: { unsigned: { type: 'boolean', default: 
 const target = resolveDesktopBuildTarget()
 const windows = target === 'win-x64'
 if (values.unsigned && !windows) throw new Error('desktop smoke: unsigned artifacts require Windows')
-const artifacts = values.unsigned ? paths.unsignedArtifacts : paths.artifacts
+const artifacts = values.unsigned ? paths.unsignedArtifacts
+  : isLocalUnsignedBuild(process.env) ? paths.localArtifacts : paths.artifacts
 const application = windows ? join(artifacts, 'win-unpacked')
   : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
 const resources = join(application, windows ? 'resources' : 'Resources')
