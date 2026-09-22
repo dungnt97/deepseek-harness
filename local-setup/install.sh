@@ -109,6 +109,12 @@ say "9/10  rebuild-on-upstream-update agent -> $UPDATE_PLIST_DST"
 # The application is built from source, so a new upstream commit needs a new build.
 # The agent checks upstream every six hours and prompts once per new upstream state;
 # confirming runs update.sh, which rebuilds and reinstalls without further input.
+# A fresh clone carries only `origin`, and both scripts fetch this remote.
+if ! git -C "$REPO" remote get-url upstream >/dev/null 2>&1; then
+  git -C "$REPO" remote add upstream git@github.com:deepseek-ai/deepseek-harness.git
+  git -C "$REPO" remote set-url --push upstream DISABLED_NO_PUSH
+  echo "     added the fetch-only upstream remote"
+fi
 sed -e "s|__HOME__|$HOME_DIR|g" -e "s|__REPO__|$REPO|g" "$SETUP/assets/ai.dsh.repo-update.plist.in" > "$UPDATE_PLIST_DST"
 plutil -lint "$UPDATE_PLIST_DST"
 load_agent "$UPDATE_LABEL" "$UPDATE_PLIST_DST"

@@ -14,6 +14,33 @@ Run it after a Harness update, after a fresh clone, or whenever `read_image`,
 `web_search`, or `ak` starts refusing. It is idempotent and backs up `settings.yaml`
 first.
 
+## Setting up another Mac
+
+The branch, the patches, and these scripts travel in Git. The credentials, the settings,
+and the built application do not. On a second Apple Silicon Mac:
+
+1. **Prerequisites:** macOS on Apple Silicon, Xcode Command Line Tools
+   (`xcode-select --install`), Node.js `^22.19 || >=24`, and Git access to
+   `git@github.com:dungnt97/deepseek-harness.git`. Python 3 comes with the tools.
+2. **Clone outside a TCC-protected directory** — `~/deepseek-harness`, never
+   `~/Documents` ([why](#why-the-repository-lives-in-deepseek-harness)) — and check out
+   the branch the build reads:
+
+   ```bash
+   git clone git@github.com:dungnt97/deepseek-harness.git ~/deepseek-harness
+   cd ~/deepseek-harness && git checkout desktop-local
+   ```
+3. **Machine-level pieces:** `bash local-setup/install.sh`. It installs the relay,
+   LaunchAgents, settings, and skills, adds the fetch-only `upstream` remote a fresh clone
+   lacks, and ends with `verify.sh`.
+4. **Build and install the application:** `bash local-setup/update.sh --force`. `--force`
+   is required because the fresh clone is already level with upstream. The first build
+   runs several minutes and downloads Electron and the bundled runtime. No Apple Developer
+   identity is needed: the local build is ad-hoc signed.
+5. **Credentials stay per machine.** `DEEPSEEK_API_KEY` and the OpenCode Go key live in
+   `~/.dsh/settings.yaml`, never in the repository; the sections above name the key each
+   capability needs.
+
 ---
 
 ## Why any of this is needed
