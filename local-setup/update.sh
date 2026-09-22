@@ -166,6 +166,13 @@ fi
 say "installing dependencies"
 pnpm install --frozen-lockfile || pnpm install
 
+# The Desktop package command imports `@deepseek-ai/node-addon-system/flock` while it loads,
+# and a fresh checkout has no `lib/` there: the directory is Git-ignored and no install
+# script creates it, so the package command dies before it can build anything.
+say "building the native addon"
+pnpm run build:native-system
+pnpm --dir native/system run build:ts
+
 # Measured at 2m56s on this machine: the TypeScript build, every package pack, the
 # bundled-runtime install, and electron-builder.
 say "building and packaging"
