@@ -4,7 +4,7 @@
 # The application is built from source, so a new upstream commit means a new build.
 # This script does the whole sequence and never leaves a half-installed application:
 # the new bundle is built and signed *before* the installed one is touched, and a
-# failed rebase, install, or build stops with the installed application untouched.
+# failed merge, install, or build stops with the installed application untouched.
 #
 #   bash ~/deepseek-harness/local-setup/update.sh
 #   bash ~/deepseek-harness/local-setup/update.sh --force
@@ -136,27 +136,29 @@ if [ "$BEHIND" = "0" ]; then
   fi
   say "already up to date with upstream/master; --force rebuilds the current tree anyway"
 else
-  say "$BEHIND commit(s) behind upstream/master; rebasing $BRANCH"
+  say "$BEHIND commit(s) behind upstream/master; merging into $BRANCH"
 fi
 
-# `--dry-run` stops before anything is rewritten, so the guards can be exercised
-# without touching the branch or the installed application.
+# `--dry-run` stops before the branch or the installed application is touched, so the
+# guards can be exercised without side effects.
 if [ "$DRY_RUN" = "1" ]; then
   if [ "$BEHIND" = "0" ]; then
     say "dry run: would rebuild and reinstall the current tree (~3 minutes)"
   else
-    say "dry run: would rebase $BRANCH onto upstream/master, rebuild, and reinstall (~3 minutes)"
+    say "dry run: would merge upstream/master into $BRANCH, rebuild, and reinstall (~3 minutes)"
   fi
   exit 0
 fi
 
+# A merge keeps every resolution already recorded, so upstream changes that were merged
+# once do not have to be resolved again; only newly overlapping edits conflict.
 if [ "$BEHIND" != "0" ]; then
-  if ! git rebase upstream/master; then
+  if ! git merge -m "merge: upstream/master into $BRANCH" upstream/master; then
     CONFLICTS="$(git diff --name-only --diff-filter=U | tr '\n' ' ')"
-    git rebase --abort || true
-    say "rebase conflicted in: $CONFLICTS"
-    say "rebase aborted; the installed application is untouched"
-    notify "Update needs attention" "Rebase conflict — run update.sh in a terminal"
+    git merge --abort || true
+    say "merge conflicted in: $CONFLICTS"
+    say "merge aborted; the installed application is untouched"
+    notify "Update needs attention" "Merge conflict — run update.sh in a terminal"
     exit 1
   fi
 fi

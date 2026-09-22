@@ -197,7 +197,7 @@ stray push fails instead of reaching someone else's repository.
 **Fix:** `check-update.sh`, on the six-hourly LaunchAgent `ai.dsh.repo-update`, fetches
 upstream and — when HEAD is behind — shows **one alert with a real Update button**
 (`osascript display dialog`, no extra tooling). Confirming hands the work to
-`update.sh`, which rebases `desktop-local`, installs dependencies, rebuilds and
+`update.sh`, which merges upstream `master` into `desktop-local`, installs dependencies, rebuilds and
 packages, ad-hoc signs, quits the application, replaces `/Applications`, and relaunches.
 
 What keeps it safe:
@@ -206,7 +206,7 @@ What keeps it safe:
 |---|---|
 | One prompt per upstream state | The asked-about SHA is recorded in `~/.dsh/update-notified`; "Later" is not re-asked until upstream moves. |
 | Never a half-installed app | The new bundle is built **and signature-verified before** the installed one is touched. |
-| A conflict cannot break anything | A failed rebase is aborted; the installed application is left alone and a notification says it needs attention. |
+| A conflict cannot break anything | A failed merge is aborted; the installed application is left alone and a notification says it needs attention. |
 | Preview without side effects | `bash update.sh --dry-run` reports what it would do and stops. |
 | Install a bundle that already exists | `bash update.sh --install-only` signs and installs the existing bundle and restarts the app — about a second, because APFS clones the 550 MB copy. Use it after a build, or to finish an update by hand. |
 | Rebuild without waiting for upstream | `bash update.sh --force` rebuilds and reinstalls even when upstream has not moved. Measured here: **2m56s** — the TypeScript build, every package pack, the bundled-runtime install, and electron-builder. |
@@ -214,17 +214,17 @@ What keeps it safe:
 | Untracked files do not block it | The clean-tree guard ignores untracked paths, because `local-setup/` is deliberately machine-local. |
 
 **Known limit:** upstream edits to files this branch patches conflict, and no automation
-can decide those. `apps/desktop/electron-builder.config.mjs` carries the highest risk
-because the local unsigned-build mode sits in the same `mac` block upstream also edits.
-Resolve once in a terminal; after that the branch rebases cleanly until upstream touches
-it again.
+can decide those. The delta is about 250 lines across 17 files in `apps/desktop`;
+`scripts/package-target.ts` and `scripts/electron-builder-config.mjs` carry the highest
+risk because the local unsigned-build mode sits in the packaging and signing paths
+upstream also edits. Resolve once in a terminal; a merge keeps that resolution, so the
+branch merges cleanly until upstream touches the same lines again.
 
-The branch was rebased onto upstream `master` (`0d1f50007f`, version `0.1.6-alpha.1`)
-with one conflict in that file — upstream had moved the packaged runtime to
-`app.asar.unpacked/dsh` and dropped its own `afterSign` runtime verification. The
-resolution keeps upstream's `signIgnore` path, keeps the `localUnsigned` gates, and drops
-the duplicate verification. A rebase run by `update.sh` cannot make those calls itself,
-which is exactly why a conflict aborts instead of guessing.
+The branch is merged onto upstream `master` (`c36a83ff6b`, version `0.1.7-alpha.1`).
+Its delta is only the local ad-hoc build mode: the standard menus, the plugin-manager
+window, the application icon, and the runtime smoke probe all come from upstream, which
+now provides each of them. A merge run by `update.sh` cannot make conflict decisions
+itself, which is exactly why a conflict aborts instead of guessing.
 
 ### Why the repository lives in `~/deepseek-harness`
 
@@ -301,7 +301,7 @@ tail -f ~/.dsh/go-search-proxy.log                                    # log
 | `/usage` shows nothing or an HTTP error | Run `~/.dsh/bin/opencode-usage.py` and read the message: `HTTP 401` means the key is not the Go one, `HTTP 404` means the endpoint moved. The plugin/allowance check needs no restart. |
 | A quota plugin installed but no sidebar widget | The published plugins need `webServer`, which Desktop disables. They only render under `dsh --profile web`. |
 | The update alert never appears | Check the agent is loaded (`launchctl print gui/$(id -u)/ai.dsh.repo-update`) and that upstream actually moved (`git -C ~/deepseek-harness rev-list --count HEAD..upstream/master`). A state already offered is not offered again; delete `~/.dsh/update-notified` to be asked again. |
-| The update stopped with "needs attention" | The rebase conflicted and was aborted; the installed app is untouched. Resolve in a terminal: `git rebase upstream/master`, fix the listed files, then `bash local-setup/update.sh`. |
+| The update stopped with "needs attention" | The merge conflicted and was aborted; the installed app is untouched. Resolve in a terminal: `git merge upstream/master`, fix the listed files, commit, then `bash local-setup/update.sh`. |
 | The update stopped with "Uncommitted changes" | Tracked files are modified. Commit them to `desktop-local` or discard them; untracked paths such as `local-setup/` never block it. |
 | An update seems stuck | `tail -f ~/.dsh/update.log`. A killed run leaves `~/.dsh/update.lock`; remove it only when no update is running. |
 
