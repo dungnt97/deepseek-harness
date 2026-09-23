@@ -143,14 +143,22 @@ Two further gaps sit behind that one:
   (`skill file … ignored: invalid skill name "ck:brainstorm"`). It also discovers only
   top-level `<name>/SKILL.md`, so the four bundles under `document-skills/` are invisible
   even with a valid name.
+- The cached kits carry a **second, fuller generation** of the same skills. The `dsh`
+  install failed, but AgentKit had already downloaded `engineer` for its own adapters into
+  `~/.agentkit/cache/kits/**`, and that copy keeps modes the installed one dropped:
+  `plan` there holds 22 references including `debate-mode.md` and `ultra-mode.md`, against
+  14 and neither mode in `~/.claude/skills`.
 
-**Fix:** `ensure_skills.py` mirrors the skills into `~/.dsh/skills` — the `user-dsh` root
-the Harness scans — rewriting the frontmatter `name:` to a valid slug and flattening the
-nested bundles. It is a generated mirror, not a second source of truth: re-run it after
+**Fix:** `ensure_skills.py` mirrors from both roots into `~/.dsh/skills` — the `user-dsh`
+root the Harness scans — rewriting the frontmatter `name:` to a valid slug, stripping the
+`ck:`/`ak-` namespace, and flattening the nested bundles. When two sources declare the
+same skill, the bundle carrying more files wins, so the fuller generation is the one
+mirrored. It is a generated mirror, not a second source of truth: re-run it after
 AgentKit changes its skills, and it refreshes what it owns and prunes the rest. Bundles
 it did not create are left alone, and its manifest lives at
-`~/.dsh/skills/.agentkit-mirror`. Measured after the first run: **88 skills in the
-session catalog**, up from 2.
+`~/.dsh/skills/.agentkit-mirror`. Measured after the two-source run: **114 bundles in
+`~/.dsh/skills`, up from 89**, with nothing pruned and `plan` exposing `--debate` and
+`--ultra`.
 
 Once a kit ships a `dsh` variant, `ak kit install <kit> --target dsh --global` replaces
 this script — the adapter is already enabled, so nothing else needs to change.

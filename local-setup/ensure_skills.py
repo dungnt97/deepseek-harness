@@ -8,9 +8,17 @@ Harness's skill roots.
 
 Why a copy instead of symlinks: `dsh-skill-filesystem` requires the frontmatter
 `name` to match /^[a-z0-9]+(?:-[a-z0-9]+)*$/ and drops the whole skill otherwise.
-ClaudeKit names 86 of its 88 skills `ck:<skill>`, so those are invisible to the
-Harness until the name is normalized. A symlink cannot carry a rewritten name, so
-each bundle is copied and only its frontmatter `name:` line is rewritten.
+ClaudeKit names its skills `ck:<skill>` and the cached AgentKit kits name theirs
+`ak-<skill>`, so both are invisible to the Harness until the name is normalized. A
+symlink cannot carry a rewritten name, so each bundle is copied and only its
+frontmatter `name:` line is rewritten.
+
+Two sources are read. `~/.claude/skills` is what the Claude Code adapter installed;
+`~/.agentkit/cache/kits/**` is what AgentKit downloaded for its own adapters, and
+it carries fuller variants — the `plan` bundle there holds 22 references including
+`debate-mode.md` and `ultra-mode.md`, where the installed one holds 14 and
+documents neither mode. When both sources declare the same skill name, the bundle
+carrying more files is mirrored; a smaller variant never replaces a larger one.
 
 The mirror is generated, never hand-edited: re-run this script after AgentKit
 changes its skills and it refreshes every bundle it owns and prunes the rest.
@@ -21,16 +29,23 @@ Bundles in the destination that this script did not create are left untouched.
 
 from __future__ import annotations
 
+import glob
 import os
 import re
 import shutil
 import sys
 
 SOURCE = os.environ.get("AGENTKIT_SKILLS", os.path.expanduser("~/.claude/skills"))
+KIT_CACHE = os.environ.get("AGENTKIT_KIT_CACHE", os.path.expanduser("~/.agentkit/cache/kits"))
 DEST = os.environ.get("DSH_SKILLS_ROOT", os.path.expanduser("~/.dsh/skills"))
 MARKER = os.path.join(DEST, ".agentkit-mirror")
 
+# Cached kits keep their payload under <kit>/<adapter>/<version>/<name>/; the adapter's
+# skill bundles live in `.omp/skills`, with a plain `skills` directory as the fallback.
+KIT_SKILL_GLOBS = ("*/*/*/*/.omp/skills", "*/*/*/*/skills")
+
 DSH_SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+NAMESPACE = re.compile(r"^(?:ck|ak)[:\-]")
 FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 NAME_LINE = re.compile(r"^name:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
 
@@ -49,24 +64,26 @@ def declared_name(skill_md: str) -> str | None:
 def normalize(name: str, directory: str) -> str | None:
     """Return a DSH-valid skill name, dropping an AgentKit namespace prefix.
 
-    `ck:brainstorm` becomes `brainstorm`; a name that is already valid is kept.
-    The directory name is the fallback when the declared name cannot be salvaged.
+    `ck:brainstorm`, `ck-plan` and `ak-plan` all become their bare skill name; a name
+    that is already valid is kept. The directory name is the fallback when the
+    declared name cannot be salvaged.
     """
-    for candidate in (name.rsplit(":", 1)[-1], name, directory):
+    bare = NAMESPACE.sub("", name.rsplit(":", 1)[-1])
+    for candidate in (bare, name, directory):
         if DSH_SKILL_NAME.match(candidate) and candidate:
             return candidate
     return None
 
 
-def find_bundles() -> list[tuple[str, str]]:
+def find_bundles(root: str) -> list[tuple[str, str]]:
     """Return (bundle directory, directory name) for every <name>/SKILL.md, top level first.
 
     `dsh-skill-filesystem` discovers only top-level bundles, so a nested bundle
     such as document-skills/pdf is collected here and mirrored as its own entry.
     """
     bundles: list[tuple[str, str]] = []
-    for entry in sorted(os.listdir(SOURCE)):
-        path = os.path.join(SOURCE, entry)
+    for entry in sorted(os.listdir(root)):
+        path = os.path.join(root, entry)
         if not os.path.isdir(path):
             continue
         if os.path.isfile(os.path.join(path, "SKILL.md")):
@@ -77,6 +94,23 @@ def find_bundles() -> list[tuple[str, str]]:
             if os.path.isdir(nested_path) and os.path.isfile(os.path.join(nested_path, "SKILL.md")):
                 bundles.append((nested_path, nested))
     return bundles
+
+
+def kit_skill_roots() -> list[str]:
+    """Return every skill directory inside the AgentKit kit cache."""
+    roots: list[str] = []
+    for pattern in KIT_SKILL_GLOBS:
+        roots.extend(sorted(glob.glob(os.path.join(KIT_CACHE, pattern))))
+    return roots
+
+
+def bundle_weight(bundle: str) -> int:
+    """Rank a bundle by the number of files it carries.
+
+    The two sources ship different generations of the same skill; the fuller bundle is
+    the one that still documents the modes the smaller one dropped.
+    """
+    return sum(len(files) for _root, _dirs, files in os.walk(bundle))
 
 
 def previous_names() -> set[str]:
@@ -117,8 +151,9 @@ def remove_legacy_symlinks() -> int:
 
 
 def main() -> int:
-    if not os.path.isdir(SOURCE):
-        print(f"skills: no AgentKit skill source at {SOURCE}; nothing mirrored")
+    sources = [root for root in [SOURCE, *kit_skill_roots()] if os.path.isdir(root)]
+    if not sources:
+        print(f"skills: no AgentKit skill source at {SOURCE} or {KIT_CACHE}; nothing mirrored")
         return 0
 
     os.makedirs(DEST, exist_ok=True)
@@ -126,24 +161,30 @@ def main() -> int:
     legacy = remove_legacy_symlinks()
 
     mirrored: dict[str, str] = {}
-    collisions: list[str] = []
+    weights: dict[str, int] = {}
+    shared: list[str] = []
     unusable: list[str] = []
 
-    for bundle, directory in find_bundles():
-        with open(os.path.join(bundle, "SKILL.md"), encoding="utf-8", errors="replace") as handle:
-            skill_md = handle.read()
-        declared = declared_name(skill_md)
-        if declared is None:
-            unusable.append(f"{directory} (no frontmatter name)")
-            continue
-        name = normalize(declared, directory)
-        if name is None:
-            unusable.append(f"{directory} (unusable name {declared!r})")
-            continue
-        if name in mirrored and mirrored[name] != bundle:
-            collisions.append(f"{directory} -> {name} (already from {mirrored[name]})")
-            continue
-        mirrored[name] = bundle
+    for root in sources:
+        for bundle, directory in find_bundles(root):
+            with open(os.path.join(bundle, "SKILL.md"), encoding="utf-8", errors="replace") as handle:
+                skill_md = handle.read()
+            declared = declared_name(skill_md)
+            if declared is None:
+                unusable.append(f"{directory} (no frontmatter name)")
+                continue
+            name = normalize(declared, directory)
+            if name is None:
+                unusable.append(f"{directory} (unusable name {declared!r})")
+                continue
+            weight = bundle_weight(bundle)
+            if name in mirrored:
+                if weight <= weights[name]:
+                    shared.append(f"{directory} -> {name} (kept {mirrored[name]})")
+                    continue
+                shared.append(f"{directory} -> {name} (replaces {mirrored[name]})")
+            mirrored[name] = bundle
+            weights[name] = weight
 
     written = 0
     skipped = 0
@@ -187,8 +228,8 @@ def main() -> int:
         f"skills: {written} mirrored, {skipped} left to you, {pruned} pruned, "
         f"{legacy} legacy link(s) removed -> {DEST}"
     )
-    for note in collisions:
-        print(f"skills: name collision skipped: {note}")
+    for note in shared:
+        print(f"skills: variant chosen: {note}")
     for note in unusable:
         print(f"skills: skipped: {note}")
     return 0
