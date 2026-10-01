@@ -1,17 +1,21 @@
 #!/bin/bash
-# Rebuild and reinstall the local DeepSeek Harness application from the current branch.
+# Rebuild the local DeepSeek Harness application from the current branch and deliver it.
 #
 # The application is built from source, so a new upstream commit means a new build.
-# This script does the whole sequence and never leaves a half-installed application:
-# the new bundle is built and signed *before* the installed one is touched, and a
-# failed merge, install, or build stops with the installed application untouched.
+# Every build is signed with the local identity (signing.sh) and then delivered one of two ways:
+#   - the installed application already reads the local feed: the build is published to
+#     ~/.dsh/update-feed and the application's own updater offers it (Check for Updates,
+#     download progress, Install and Restart);
+#   - otherwise (first install, or an older ad-hoc build): the bundle replaces
+#     /Applications directly, which also makes later builds arrive through the feed.
+# A failed merge or build stops with the installed application untouched.
 #
 #   bash ~/deepseek-harness/local-setup/update.sh
 #   bash ~/deepseek-harness/local-setup/update.sh --force
 #   bash ~/deepseek-harness/local-setup/update.sh --install-only
 #   bash ~/deepseek-harness/local-setup/update.sh --dry-run
 #
-# It is driven by check-update.sh, which shows the alert and calls this on confirmation.
+# It is driven by check-update.sh, which runs it when upstream moves.
 set -euo pipefail
 
 SETUP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,9 +66,20 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 cd "$REPO"
+source "$SETUP/signing.sh"
+source "$SETUP/update-feed.sh"
+
+# Sign APP_SOURCE with the local identity and verify it.
+sign_bundle() {
+  ensure_signing_identity
+  say "signing with $SIGNING_NAME ($SIGNING_IDENTITY)"
+  /usr/bin/codesign --force --deep --sign "$SIGNING_IDENTITY" --keychain "$SIGNING_KEYCHAIN" "$APP_SOURCE"
+  /usr/bin/codesign --verify --deep --strict "$APP_SOURCE"
+  say "signature verified"
+}
 
 # Sign and install the bundle at APP_SOURCE, replacing the installed application only
-# after its signature verifies. Every caller reaches the swap through this one path.
+# after its signature verifies. Every direct install reaches the swap through this one path.
 install_bundle() {
   if [ ! -d "$APP_SOURCE" ]; then
     say "no bundle at $APP_SOURCE — run without --install-only to build one"
@@ -72,10 +87,7 @@ install_bundle() {
     exit 1
   fi
 
-  say "signing ad-hoc"
-  /usr/bin/codesign --force --deep --sign - "$APP_SOURCE"
-  /usr/bin/codesign --verify --deep --strict "$APP_SOURCE"
-  say "signature verified"
+  sign_bundle
 
   # Only now is the installed application replaced, and only while it is not running.
   say "quitting the running application"
@@ -100,7 +112,7 @@ install_bundle() {
 }
 
 # Skipping the build is what makes this path seconds instead of minutes; the bundle it
-# installs was signed by whichever build produced it, and is signed again here.
+# installs is signed again here and replaces /Applications directly, bypassing the feed.
 if [ "$INSTALL_ONLY" = "1" ]; then
   say "install-only: reusing the bundle at $APP_SOURCE"
   if [ "$DRY_RUN" = "1" ]; then
@@ -173,13 +185,34 @@ say "building the native addon"
 pnpm run build:native-system
 pnpm --dir native/system run build:ts
 
+# Every build carries a newer version than the last, so the application's updater (which
+# never downgrades) sees it as an update: <product version>.<date>.<time>, the form
+# apps/desktop/scripts/desktop-build-version.mjs validates.
+PRODUCT_VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+case "$PRODUCT_VERSION" in
+  *-*) BUILD_VERSION="$PRODUCT_VERSION." ;;
+  *) BUILD_VERSION="$PRODUCT_VERSION-test." ;;
+esac
+BUILD_VERSION="$BUILD_VERSION$(date +%Y%m%d).$((10#$(date +%H%M%S)))"
+
 # Measured at 2m56s on this machine: the TypeScript build, every package pack, the
 # bundled-runtime install, and electron-builder. The --import hook swaps Developer ID
-# signing, notarization, and the update channel for a local ad-hoc build without editing
-# apps/desktop; see local-setup/desktop-build/hooks.mjs.
-say "building and packaging"
+# signing, notarization, and the update channel for a local build without editing
+# apps/desktop; see local-setup/desktop-build/register.mjs.
+say "building and packaging $BUILD_VERSION"
 DSH_DESKTOP_APP_ID="$APP_ID" \
+DSH_LOCAL_UPDATE_FEED_URL="$UPDATE_FEED_URL" \
 NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$REPO/local-setup/desktop-build/register.mjs" \
-  pnpm --dir apps/desktop run package:mac:arm64:dir
+  pnpm --dir apps/desktop run package:mac:arm64:dir --build-version "$BUILD_VERSION"
 
-install_bundle "Rebuilt from upstream/master and relaunched"
+ensure_signing_identity
+if installed_reads_feed "$APP_TARGET"; then
+  sign_bundle
+  say "publishing $BUILD_VERSION to $UPDATE_FEED_DIR"
+  publish_update_feed "$APP_SOURCE" "$BUILD_VERSION"
+  notify "DeepSeek Harness $BUILD_VERSION is ready" "Install it from DeepSeek Harness › Check for Updates…"
+  printf '=== update published %s ===\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+else
+  say "the installed application does not read the local feed yet; installing directly"
+  install_bundle "Rebuilt $BUILD_VERSION and relaunched"
+fi

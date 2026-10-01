@@ -1,9 +1,12 @@
 #!/bin/bash
-# Ask, at most once per upstream state, whether to rebuild the local application.
+# Build the local application when upstream moves.
 #
 # The application is built from source, so a new upstream commit means a new build.
-# This checks upstream, and when it has moved shows one alert with a real Update
-# button; confirming hands the work to update.sh, which does the whole sequence.
+# When the installed application reads the local update feed, the build runs unattended:
+# update.sh publishes it, and the application's own updater offers it (Check for Updates,
+# download progress, Install and Restart). An installed application that predates the feed
+# would be replaced and restarted directly, so that case still asks first, once per
+# upstream state.
 #
 #   bash ~/deepseek-harness/local-setup/check-update.sh
 #
@@ -26,8 +29,21 @@ UPSTREAM_SHA="$(git rev-parse upstream/master 2>/dev/null)" || exit 0
 BEHIND="$(git rev-list --count "HEAD..upstream/master" 2>/dev/null)" || exit 0
 [ "${BEHIND:-0}" = "0" ] && exit 0
 
-# One prompt per upstream state: "Later" is remembered until upstream moves again.
+# One build or prompt per upstream state: "Later" is remembered until upstream moves again.
 [ -f "$STATE" ] && [ "$(cat "$STATE")" = "$UPSTREAM_SHA" ] && exit 0
+
+source "$SETUP/signing.sh"
+source "$SETUP/update-feed.sh"
+ensure_signing_identity >/dev/null 2>&1 || exit 0
+if installed_reads_feed "/Applications/DeepSeek Harness.app"; then
+  printf '%s\n' "$UPSTREAM_SHA" > "$STATE"
+  # Foreground: launchd kills a detached child when this job exits (see below).
+  if ! /bin/bash "$SETUP/update.sh"; then
+    rm -f "$STATE"
+    /usr/bin/osascript -e "display notification \"The background build did not finish — see ~/.dsh/update.log\" with title \"DeepSeek Harness update failed\"" >/dev/null 2>&1 || true
+  fi
+  exit 0
+fi
 
 SUBJECT="DeepSeek Harness"
 MESSAGE="$BEHIND new commit(s) on upstream/master.\\n\\nRebuild and reinstall the application now?\\nThis takes a few minutes and restarts the app."

@@ -22,6 +22,8 @@ USAGE_DST="$HOME_DIR/.dsh/bin/opencode-usage.py"
 USAGE_SKILL_DST="$HOME_DIR/.dsh/skills/usage/SKILL.md"
 UPDATE_LABEL="ai.dsh.repo-update"
 UPDATE_PLIST_DST="$HOME_DIR/Library/LaunchAgents/$UPDATE_LABEL.plist"
+FEED_LABEL="ai.dsh.update-feed"
+FEED_PLIST_DST="$HOME_DIR/Library/LaunchAgents/$FEED_LABEL.plist"
 UID_N="$(id -u)"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -39,17 +41,17 @@ load_agent() {
   launchctl bootstrap "gui/$UID_N" "$plist"
 }
 
-say "1/10  relay -> $RELAY_DST"
+say "1/11  relay -> $RELAY_DST"
 mkdir -p "$HOME_DIR/.dsh/bin"
 install -m 0755 "$SETUP/assets/go-search-proxy.py" "$RELAY_DST"
 echo "     installed ($(wc -c < "$RELAY_DST" | tr -d ' ') bytes)"
 
-say "2/10  LaunchAgent -> $PLIST_DST"
+say "2/11  LaunchAgent -> $PLIST_DST"
 mkdir -p "$HOME_DIR/Library/LaunchAgents"
 sed "s|__HOME__|$HOME_DIR|g" "$SETUP/assets/ai.dsh.opencode-go-search-relay.plist.in" > "$PLIST_DST"
 plutil -lint "$PLIST_DST"
 
-say "3/10  (re)load the service"
+say "3/11  (re)load the service"
 load_agent "$AGENT_LABEL" "$PLIST_DST"
 launchctl enable "gui/$UID_N/$AGENT_LABEL" 2>/dev/null || true
 # give KeepAlive a moment to bring the port up before anything probes it
@@ -59,10 +61,10 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 echo "     state: $(launchctl print "gui/$UID_N/$AGENT_LABEL" 2>/dev/null | awk '/state = /{print $3; exit}')"
 
-say "4/10  settings.yaml"
+say "4/11  settings.yaml"
 python3 "$SETUP/ensure_settings.py"
 
-say "5/10  GUI session PATH -> $PATH_PLIST_DST"
+say "5/11  GUI session PATH -> $PATH_PLIST_DST"
 # launchd hands every Finder-launched app only /usr/bin:/bin:/usr/sbin:/sbin, and the
 # Harness shell tool inherits the application's environment, so without this the agent
 # cannot reach node, pnpm, git, or the AgentKit CLI.
@@ -75,7 +77,7 @@ PATH_BEFORE="$(launchctl getenv PATH || true)"
 PATH_AFTER="$(launchctl getenv PATH || true)"
 echo "     gui PATH: $PATH_AFTER"
 
-say "6/10  pnpm"
+say "6/11  pnpm"
 # The Harness repo declares its package manager in `packageManager`; without a global
 # pnpm a session cannot run `pnpm run …` at all. Install only when absent so a version
 # the user chose deliberately is never silently replaced.
@@ -93,7 +95,7 @@ else
   echo "     skipped: no pnpm and no npm on PATH — install Node.js first"
 fi
 
-say "7/10  OpenCode Go quota -> $USAGE_DST"
+say "7/11  OpenCode Go quota -> $USAGE_DST"
 # The subscription allowance has an official endpoint; nothing else reports it.
 # `opencode stats` only covers that CLI's own local usage history.
 install -m 0755 "$SETUP/assets/opencode-usage.py" "$USAGE_DST"
@@ -102,10 +104,10 @@ install -m 0644 "$SETUP/assets/usage-SKILL.md" "$USAGE_SKILL_DST"
 echo "     /usage skill installed"
 "$USAGE_DST" || echo "     quota check failed; see the message above"
 
-say "8/10  AgentKit skills -> $HOME_DIR/.dsh/skills"
+say "8/11  AgentKit skills -> $HOME_DIR/.dsh/skills"
 python3 "$SETUP/ensure_skills.py"
 
-say "9/10  rebuild-on-upstream-update agent -> $UPDATE_PLIST_DST"
+say "9/11  rebuild-on-upstream-update agent -> $UPDATE_PLIST_DST"
 # The application is built from source, so a new upstream commit needs a new build.
 # The agent checks upstream every six hours and prompts once per new upstream state;
 # confirming runs update.sh, which rebuilds and reinstalls without further input.
@@ -120,7 +122,19 @@ plutil -lint "$UPDATE_PLIST_DST"
 load_agent "$UPDATE_LABEL" "$UPDATE_PLIST_DST"
 echo "     state: $(launchctl print "gui/$UID_N/$UPDATE_LABEL" 2>/dev/null | awk '/state = /{print $3; exit}')"
 
-say "10/10  verification"
+say "10/11  update feed server -> $FEED_PLIST_DST"
+# The application's Check for Updates reads the feed update.sh publishes; this serves it
+# on 127.0.0.1. The signing identity is created here too, so the first build needs no setup.
+source "$SETUP/update-feed.sh"
+source "$SETUP/signing.sh"
+mkdir -p "$UPDATE_FEED_DIR"
+sed -e "s|__HOME__|$HOME_DIR|g" -e "s|__PORT__|$UPDATE_FEED_PORT|g" "$SETUP/assets/ai.dsh.update-feed.plist.in" > "$FEED_PLIST_DST"
+plutil -lint "$FEED_PLIST_DST"
+load_agent "$FEED_LABEL" "$FEED_PLIST_DST"
+ensure_signing_identity
+echo "     feed: $UPDATE_FEED_URL  signing identity: $SIGNING_IDENTITY"
+
+say "11/11  verification"
 bash "$SETUP/verify.sh"
 
 say "DONE — nothing else to set up. Re-run this command any time."
