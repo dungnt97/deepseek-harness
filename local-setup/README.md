@@ -36,7 +36,7 @@ and the built application do not. On a second Apple Silicon Mac:
 4. **Build and install the application:** `bash local-setup/update.sh --force`. `--force`
    is required because the fresh clone is already level with upstream. The first build
    runs several minutes and downloads Electron and the bundled runtime. No Apple Developer
-   identity is needed: the local build is ad-hoc signed.
+   identity is needed: `install.sh` creates a local self-signed one (`signing.sh`).
 5. **Credentials stay per machine.** `DEEPSEEK_API_KEY` and the OpenCode Go key live in
    `~/.dsh/settings.yaml`, never in the repository; the sections above name the key each
    capability needs.
