@@ -8,10 +8,10 @@
 	<array>
 		<string>__REPO__/local-setup/check-update.sh</string>
 	</array>
-	<!-- Every six hours: often enough to notice a new upstream release the same day,
-	     rare enough that the fetch never becomes background noise. -->
+	<!-- Hourly: a build is ready in the app's Check for Updates within about an hour of an
+	     upstream commit; a run with nothing new is only a fetch. -->
 	<key>StartInterval</key>
-	<integer>21600</integer>
+	<integer>3600</integer>
 	<key>ProcessType</key>
 	<string>Background</string>
 </dict>

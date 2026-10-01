@@ -109,8 +109,8 @@ python3 "$SETUP/ensure_skills.py"
 
 say "9/11  rebuild-on-upstream-update agent -> $UPDATE_PLIST_DST"
 # The application is built from source, so a new upstream commit needs a new build.
-# The agent checks upstream every six hours and prompts once per new upstream state;
-# confirming runs update.sh, which rebuilds and reinstalls without further input.
+# The agent checks upstream every hour and builds once per new upstream state; the
+# build is published to the local feed, which the application's updater offers.
 # A fresh clone carries only `origin`, and both scripts fetch this remote.
 if ! git -C "$REPO" remote get-url upstream >/dev/null 2>&1; then
   git -C "$REPO" remote add upstream git@github.com:deepseek-ai/deepseek-harness.git

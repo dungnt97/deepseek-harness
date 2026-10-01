@@ -234,7 +234,7 @@ Updates menu, download progress bar, and Install and Restart dialog a release us
 
 ```mermaid
 flowchart LR
-  A[ai.dsh.repo-update<br/>every 6 h] -->|upstream moved| B[update.sh<br/>merge + build + sign]
+  A[ai.dsh.repo-update<br/>every 1 h] -->|upstream moved| B[update.sh<br/>merge + build + sign]
   B --> C[~/.dsh/update-feed<br/>nightly-mac.yml + zip]
   C -->|ai.dsh.update-feed<br/>127.0.0.1:47823| D[App: Check for Updates…<br/>download → Install and Restart]
 ```
@@ -314,7 +314,7 @@ protected set; `~/Documents`, `~/Desktop`, and `~/Downloads` are inside it.
 `~/Documents/deepseek-harness` remains as a symlink to the real directory so existing
 shell habits keep working, but every script here resolves the real path from its own
 location and the LaunchAgent is generated with it. Moving the repository back under
-`~/Documents` reinstates the failure — the check would exit 126 silently every six hours,
+`~/Documents` reinstates the failure — the check would exit 126 silently every hour,
 which is why the failure is worth recognising: an agent that cannot reach the repository
 exits `0` from its own guards, and only the exit code and a missing fetch tell you.
 
@@ -330,8 +330,10 @@ exits `0` from its own guards, and only the exit code and a missing fetch tell y
 | `~/.dsh/bin/opencode-usage.py` | Reports the OpenCode Go quota. Holds no key. |
 | `~/Library/LaunchAgents/ai.dsh.opencode-go-search-relay.plist` | Auto-start + KeepAlive. |
 | `~/Library/LaunchAgents/ai.dsh.gui-path.plist` | Runs `set-gui-path.sh` once per login. |
-| `~/Library/LaunchAgents/ai.dsh.repo-update.plist` | Checks upstream every six hours and offers a rebuild. |
-| `~/deepseek-harness/local-setup/update.sh` | Rebase → rebuild → sign → reinstall → relaunch. |
+| `~/Library/LaunchAgents/ai.dsh.repo-update.plist` | Checks upstream every hour and builds new upstream commits into the update feed. |
+| `~/deepseek-harness/local-setup/update.sh` | Merge → rebuild → sign → publish to the feed (or install directly the first time). |
+| `~/Library/LaunchAgents/ai.dsh.update-feed.plist`, `~/.dsh/update-feed/` | Serves the feed the application's Check for Updates reads. |
+| `~/.dsh/signing/` | Keychain with the local code-signing identity. |
 | `~/.dsh/update.log`, `~/.dsh/update-notified`, `~/.dsh/update.lock` | Update log, last offered upstream SHA, single-run lock. |
 | `~/.dsh/profiles/desktop/cordis.patch.yml` | `input: [text, image]` on the 4.1 entry, plus the `web-search-deepseek` entry. Newer Harness releases import the old `~/.dsh/settings.yaml` here once and rename it to `settings.yaml.imported`; `ensure_settings.py` edits the legacy file while it exists and verifies the profile patch afterwards. |
 | `~/.dsh/skills/` | Generated mirror of AgentKit's skills with Harness-valid names, plus the hand-authored `usage` bundle. |
