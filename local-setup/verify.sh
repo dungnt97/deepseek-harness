@@ -158,9 +158,20 @@ if [ "$BEHIND" = "0" ]; then
 elif [ "$BEHIND" = "?" ]; then
   warn "cannot compare with upstream/master — run: git -C \"$REPO_DIR\" fetch upstream"
 else
-  warn "$BEHIND commit(s) behind upstream/master — the update agent will offer a rebuild"
+  warn "$BEHIND commit(s) behind upstream/master — the update agent will build it"
 fi
 [ -z "$(git -C "$REPO_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ] && ok "no uncommitted tracked changes" || warn "tracked files are modified; update.sh will refuse to run"
+
+echo "== in-app update feed =="
+source "$REPO_DIR/local-setup/signing.sh"
+source "$REPO_DIR/local-setup/update-feed.sh"
+if curl -s -m 3 -o /dev/null "$UPDATE_FEED_URL"; then ok "feed server answers on $UPDATE_FEED_URL"; else bad "ai.dsh.update-feed does not answer on $UPDATE_FEED_URL"; fi
+if ensure_signing_identity >/dev/null 2>&1; then ok "signing identity $SIGNING_IDENTITY"; else bad "no local signing identity — run install.sh"; fi
+if installed_reads_feed "/Applications/DeepSeek Harness.app"; then
+  ok "installed application updates itself from the feed"
+else
+  warn "installed application predates the feed — the next update.sh run installs it directly"
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then

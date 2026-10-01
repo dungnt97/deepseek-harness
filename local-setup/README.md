@@ -229,22 +229,46 @@ local desktop patches live on branch `desktop-local` pushed to
 `upstream`, configured **fetch-only** — `git remote -v` shows `DISABLED_NO_PUSH`, so a
 stray push fails instead of reaching someone else's repository.
 
-**Fix:** `check-update.sh`, on the six-hourly LaunchAgent `ai.dsh.repo-update`, fetches
-upstream and — when HEAD is behind — shows **one alert with a real Update button**
-(`osascript display dialog`, no extra tooling). Confirming hands the work to
-`update.sh`, which merges upstream `master` into `desktop-local`, installs dependencies, rebuilds and
-packages, ad-hoc signs, quits the application, replaces `/Applications`, and relaunches.
+**Fix:** builds reach the application through its **own updater** — the same Check for
+Updates menu, download progress bar, and Install and Restart dialog a release uses.
+
+```mermaid
+flowchart LR
+  A[ai.dsh.repo-update<br/>every 6 h] -->|upstream moved| B[update.sh<br/>merge + build + sign]
+  B --> C[~/.dsh/update-feed<br/>nightly-mac.yml + zip]
+  C -->|ai.dsh.update-feed<br/>127.0.0.1:47823| D[App: Check for Updates…<br/>download → Install and Restart]
+```
+
+- `check-update.sh` (LaunchAgent `ai.dsh.repo-update`) fetches upstream; when HEAD is behind
+  it runs `update.sh` unattended, once per upstream state.
+- `update.sh` merges upstream `master` into `desktop-local`, builds with version
+  `<product version>.<date>.<time>` (always newer, so the updater accepts it), signs the
+  bundle with the local identity, and publishes it to `~/.dsh/update-feed`
+  (`update-feed.sh`). A notification says the update is ready.
+- The application finds it on its own periodic check or from **DeepSeek Harness › Check for
+  Updates…**, downloads with progress, and restarts into it.
+
+Two pieces make Squirrel.Mac (the macOS updater inside Electron) accept a local build:
+
+| Piece | Why |
+|---|---|
+| `app-update.yml` pointing at `http://127.0.0.1:47823/` | The application enables its updater only when this file exists; the build writes it (override of `desktop-auto-update-environment.mjs`, `DSH_LOCAL_UPDATE_FEED_URL`). |
+| Self-signed identity `DSH Local Code Signing` (`signing.sh`) | Squirrel installs only a bundle that satisfies the running app's designated requirement. Ad-hoc signatures pin one build's hash, so no later build could pass; a certificate pins `certificate leaf = H"…"`, stable across builds. It lives in `~/.dsh/signing/dsh-local.keychain-db` with a generated password, so signing never prompts. |
+
+The first build after an application that predates the feed (no `app-update.yml`, or ad-hoc
+signed) is installed directly — quit, replace `/Applications`, relaunch — and every later build
+goes through the feed. `check-update.sh` still asks before such a direct install.
 
 What keeps it safe:
 
 | Property | How |
 |---|---|
-| One prompt per upstream state | The asked-about SHA is recorded in `~/.dsh/update-notified`; "Later" is not re-asked until upstream moves, and an update that fails clears the record so the same state is offered again. |
-| Never a half-installed app | The new bundle is built **and signature-verified before** the installed one is touched. |
+| One build per upstream state | The built SHA is recorded in `~/.dsh/update-notified`; a build that fails clears the record so the same state is tried again. |
+| Never a half-installed app | The bundle is built **and signature-verified before** it is published or installed; the feed manifest is replaced atomically after its zip is complete; the updater checks the zip's SHA-512 and the signature. |
 | A conflict cannot break anything | A failed merge is aborted; the installed application is left alone and a notification says it needs attention. |
 | Preview without side effects | `bash update.sh --dry-run` reports what it would do and stops. |
-| Install a bundle that already exists | `bash update.sh --install-only` signs and installs the existing bundle and restarts the app — about a second, because APFS clones the 550 MB copy. Use it after a build, or to finish an update by hand. |
-| Rebuild without waiting for upstream | `bash update.sh --force` rebuilds and reinstalls even when upstream has not moved. Measured here: **2m56s** — the TypeScript build, every package pack, the bundled-runtime install, and electron-builder. |
+| Install a bundle that already exists | `bash update.sh --install-only` signs and installs the existing bundle directly and restarts the app, bypassing the feed. |
+| Rebuild without waiting for upstream | `bash update.sh --force` rebuilds and publishes even when upstream has not moved. Measured here: about **3 minutes**. |
 | No concurrent runs | `~/.dsh/update.lock`; the whole run is appended to `~/.dsh/update.log`. |
 | Untracked files do not block it | The clean-tree guard ignores untracked paths, because `local-setup/` is deliberately machine-local. |
 
@@ -258,10 +282,11 @@ answers eight `apps/desktop/scripts` modules with the wrappers in `overrides/`:
 |---|---|
 | `desktop-package-environment.mjs` | `.env.macos` optional; only the app ID and npm registry are validated |
 | `desktop-release-environment.mjs` | placeholder Developer ID and notarization settings |
-| `desktop-policy-environment.mjs`, `desktop-auto-update-environment.mjs` | no mandatory-update policy, no update channel |
+| `desktop-policy-environment.mjs` | no mandatory-update policy |
+| `desktop-auto-update-environment.mjs` | update channel = the local feed (`DSH_LOCAL_UPDATE_FEED_URL`), none without it |
 | `macos-signing-keychain.mjs`, `notarize-macos.mjs` | no keychain import, no notarization |
-| `macos-runtime.ts` | `signMacOSRuntime` ad-hoc signs the runtime's Mach-O files |
-| `electron-builder-config.mjs` | `identity: null`, no hardened runtime, DMG signing, notarization, or release signature check |
+| `macos-runtime.ts` | `signMacOSRuntime` ad-hoc signs the runtime's Mach-O files (the bundle is then signed with the local identity) |
+| `electron-builder-config.mjs` | `identity: null`, no hardened runtime, DMG signing, notarization, or release signature check; `update.sh` signs afterwards |
 
 Each wrapper re-exports the real module and replaces only those functions. When upstream
 renames or re-signatures one of them, the build fails loudly in `update.sh` (the installed
