@@ -118,31 +118,6 @@ describe('Desktop local packaging configuration', () => {
     })
   })
 
-  it('loads a local macOS build from ambient settings without the target file or release credentials', async () => {
-    await withDirectory(async (directory) => {
-      const parent = { PATH: 'build-tools', DSH_DESKTOP_APP_ID: 'com.example.desktop', DSH_DESKTOP_LOCAL_UNSIGNED: '1' }
-      expect(loadDesktopPackageEnvironment('darwin', parent, directory)).toEqual({
-        PATH: 'build-tools', DSH_DESKTOP_APP_ID: 'com.example.desktop', DSH_DESKTOP_LOCAL_UNSIGNED: '1',
-      })
-      expect(() => {
-        validateDesktopPackageEnvironment(loadDesktopPackageEnvironment('darwin', parent, directory), MACOS, { localUnsigned: true })
-      }).not.toThrow()
-      await writeFile(join(directory, '.env.macos'), 'DSH_DESKTOP_APP_ID=com.example.file\n')
-      expect(loadDesktopPackageEnvironment('darwin', parent, directory)).toEqual({
-        PATH: 'build-tools', DSH_DESKTOP_APP_ID: 'com.example.file', DSH_DESKTOP_LOCAL_UNSIGNED: '1',
-      })
-    })
-  })
-
-  it('keeps release requirements for a macOS build that is not local', async () => {
-    await withDirectory(async (directory) => {
-      expect(() => loadDesktopPackageEnvironment('darwin', { DSH_DESKTOP_LOCAL_UNSIGNED: '0' }, directory)).toThrow(/copy .*\.env\.macos\.example/u)
-      expect(() => {
-        validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.desktop' }, MACOS)
-      }).toThrow(/DSH_DESKTOP_MANDATORY_UPDATE/u)
-    })
-  })
-
   it('checks application and update configuration before Windows credentials while preserving unsigned and preparation modes', () => {
     expect(() => {
       validateDesktopPackageEnvironment({}, WINDOWS, { unsigned: true })

@@ -20,7 +20,7 @@ HOME_DIR="$HOME"
 LOG="$HOME_DIR/.dsh/update.log"
 LOCK="$HOME_DIR/.dsh/update.lock"
 APP_ID="com.deepseek.harness.desktop"
-APP_SOURCE="$REPO/apps/desktop/.desktop-build/targets/mac-arm64/local-artifacts/mac-arm64/DeepSeek Harness.app"
+APP_SOURCE="$REPO/apps/desktop/.desktop-build/targets/mac-arm64/artifacts/mac-arm64/DeepSeek Harness.app"
 APP_TARGET="/Applications/DeepSeek Harness.app"
 BRANCH="desktop-local"
 
@@ -150,8 +150,8 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# A merge keeps every resolution already recorded, so upstream changes that were merged
-# once do not have to be resolved again; only newly overlapping edits conflict.
+# This branch edits no upstream file (the local build mode lives in local-setup/desktop-build),
+# so a conflict here means an upstream file was edited by hand and must be reverted.
 if [ "$BEHIND" != "0" ]; then
   if ! git merge -m "merge: upstream/master into $BRANCH" upstream/master; then
     CONFLICTS="$(git diff --name-only --diff-filter=U | tr '\n' ' ')"
@@ -174,9 +174,12 @@ pnpm run build:native-system
 pnpm --dir native/system run build:ts
 
 # Measured at 2m56s on this machine: the TypeScript build, every package pack, the
-# bundled-runtime install, and electron-builder.
+# bundled-runtime install, and electron-builder. The --import hook swaps Developer ID
+# signing, notarization, and the update channel for a local ad-hoc build without editing
+# apps/desktop; see local-setup/desktop-build/hooks.mjs.
 say "building and packaging"
-DSH_DESKTOP_APP_ID="$APP_ID" DSH_DESKTOP_LOCAL_UNSIGNED=1 \
+DSH_DESKTOP_APP_ID="$APP_ID" \
+NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$REPO/local-setup/desktop-build/register.mjs" \
   pnpm --dir apps/desktop run package:mac:arm64:dir
 
 install_bundle "Rebuilt from upstream/master and relaunched"

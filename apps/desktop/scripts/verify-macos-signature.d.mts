@@ -30,17 +30,6 @@ export function signMacOSRuntimeCode(
 ): Promise<void>
 
 /**
- * Apply an ad-hoc signature to one Mach-O file for a local, non-distributed build.
- * macOS refuses to execute arm64 code that carries no signature; an ad-hoc
- * signature satisfies that requirement without claiming a release identity.
- * @param path - Writable standalone Mach-O file.
- * @param identifier - Stable code-signing identifier.
- * @param entitlements - Optional entitlement plist for this executable.
- * @returns Resolves after codesign exits successfully.
- */
-export function signMacOSRuntimeCodeAdHoc(path: string, identifier: string, entitlements?: string): Promise<void>
-
-/**
  * Verify one Mach-O file embedded in the runtime tree.
  * @param path - Mach-O file to inspect.
  * @param expected - Public release identity.

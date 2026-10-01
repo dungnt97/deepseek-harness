@@ -240,18 +240,25 @@ What keeps it safe:
 | No concurrent runs | `~/.dsh/update.lock`; the whole run is appended to `~/.dsh/update.log`. |
 | Untracked files do not block it | The clean-tree guard ignores untracked paths, because `local-setup/` is deliberately machine-local. |
 
-**Known limit:** upstream edits to files this branch patches conflict, and no automation
-can decide those. The delta is about 250 lines across 17 files in `apps/desktop`;
-`scripts/package-target.ts` and `scripts/electron-builder-config.mjs` carry the highest
-risk because the local unsigned-build mode sits in the packaging and signing paths
-upstream also edits. Resolve once in a terminal; a merge keeps that resolution, so the
-branch merges cleanly until upstream touches the same lines again.
+**No upstream file is edited.** `git diff upstream/master` lists only `local-setup/`, so
+merging upstream cannot conflict. The local build mode lives in
+`local-setup/desktop-build/`: `update.sh` runs the ordinary
+`package:mac:arm64:dir` with `NODE_OPTIONS=--import=…/register.mjs`, whose resolve hook
+answers eight `apps/desktop/scripts` modules with the wrappers in `overrides/`:
 
-The branch is merged onto upstream `master` (`c36a83ff6b`, version `0.1.7-alpha.1`).
-Its delta is only the local ad-hoc build mode: the standard menus, the plugin-manager
-window, the application icon, and the runtime smoke probe all come from upstream, which
-now provides each of them. A merge run by `update.sh` cannot make conflict decisions
-itself, which is exactly why a conflict aborts instead of guessing.
+| Upstream module | Local replacement |
+|---|---|
+| `desktop-package-environment.mjs` | `.env.macos` optional; only the app ID and npm registry are validated |
+| `desktop-release-environment.mjs` | placeholder Developer ID and notarization settings |
+| `desktop-policy-environment.mjs`, `desktop-auto-update-environment.mjs` | no mandatory-update policy, no update channel |
+| `macos-signing-keychain.mjs`, `notarize-macos.mjs` | no keychain import, no notarization |
+| `macos-runtime.ts` | `signMacOSRuntime` ad-hoc signs the runtime's Mach-O files |
+| `electron-builder-config.mjs` | `identity: null`, no hardened runtime, DMG signing, notarization, or release signature check |
+
+Each wrapper re-exports the real module and replaces only those functions. When upstream
+renames or re-signatures one of them, the build fails loudly in `update.sh` (the installed
+application stays untouched); fix the wrapper, not `apps/desktop`. Never edit an upstream
+file on this branch — that is what made every merge conflict before.
 
 ### Why the repository lives in `~/deepseek-harness`
 

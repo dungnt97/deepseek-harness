@@ -10,9 +10,6 @@ export const MACOS_TEAM_ID_ENV: 'DSH_DESKTOP_MACOS_TEAM_ID'
 /** Environment variable that selects the npm registry used for the bundled runtime install. */
 export const NPM_REGISTRY_ENV: 'DSH_DESKTOP_NPM_REGISTRY'
 
-/** Environment variable that selects a local ad-hoc-signed macOS application instead of a release. */
-export const LOCAL_UNSIGNED_BUILD_ENV: 'DSH_DESKTOP_LOCAL_UNSIGNED'
-
 /** Public identity expected on a macOS release. */
 export interface MacOSSigningEnvironment {
   readonly signingIdentity: string
@@ -44,16 +41,6 @@ export type MacOSNotarizationEnvironment =
   | MacOSAppleIdNotarizationEnvironment
   | MacOSApiKeyNotarizationEnvironment
   | MacOSKeychainNotarizationEnvironment
-
-/**
- * Report whether this build produces a local ad-hoc-signed macOS application.
- * A local build runs on the build host only: it carries no release identity,
- * notarization ticket, update channel, or release completion record, so it
- * never satisfies release qualification.
- * @param env - Packaging environment.
- * @returns True when release signing and notarization credentials are not required.
- */
-export function isLocalUnsignedBuild(env: NodeJS.ProcessEnv): boolean
 
 /**
  * Resolve and validate the application identifier shared by every platform target.

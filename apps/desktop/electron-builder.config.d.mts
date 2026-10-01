@@ -25,7 +25,9 @@ export interface DesktopElectronBuilderConfig {
   ]
   readonly mac: {
     readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
-    readonly identity: string | null | undefined
+    readonly entitlements: string
+    readonly entitlementsInherit: string
+    readonly identity: string | undefined
     readonly forceCodeSigning: boolean
     readonly notarize: boolean
     readonly signIgnore: readonly string[]
